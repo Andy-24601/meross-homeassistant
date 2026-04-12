@@ -14,7 +14,6 @@ from meross_iot.manager import MerossManager
 from meross_iot.model.http.device import HttpDeviceInfo
 from meross_iot.model.enums import DNDMode
 
-# Conditional import for switch device
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from . import MerossDevice
@@ -38,20 +37,24 @@ class MerossDndDevice(SystemDndMixin, BaseDevice):
 
 
 class SwitchEntityWrapper(MerossDevice, SwitchEntity):
-    """Wrapper class to adapt the Meross switches into the Homeassistant platform"""
+    """Wrapper class to adapt the Meross switches into the Home Assistant platform"""
     _device: MerossSwitchDevice
 
-    def __init__(self,
-                 channel: int,
-                 device: MerossSwitchDevice,
-                 device_list_coordinator: DataUpdateCoordinator[Dict[str, HttpDeviceInfo]]):
+    _attr_is_on: Optional[bool] = None
+
+    def __init__(
+        self,
+        channel: int,
+        device: MerossSwitchDevice,
+        device_list_coordinator: DataUpdateCoordinator[Dict[str, HttpDeviceInfo]]
+    ):
         super().__init__(
             device=device,
             channel=channel,
             device_list_coordinator=device_list_coordinator,
-            platform=HA_SWITCH)
+            platform=HA_SWITCH
+        )
 
-        # Device properties
         self._last_power_sample = None
         self._daily_consumption = None
 
@@ -59,65 +62,116 @@ class SwitchEntityWrapper(MerossDevice, SwitchEntity):
         if self.online:
             await super().async_update()
 
-            # If the device supports power reading, update it
+            try:
+                self._attr_is_on = self._device.is_on(channel=self._channel_id)
+            except Exception as exc:
+                _LOGGER.debug(
+                    "Failed to read switch state for %s channel %s: %s",
+                    self.name,
+                    self._channel_id,
+                    exc
+                )
+
             if isinstance(self._device, ElectricityMixin):
-                self._last_power_sample = await self._device.async_get_instant_metrics(channel=self._channel_id)
+                try:
+                    self._last_power_sample = await self._device.async_get_instant_metrics(
+                        channel=self._channel_id
+                    )
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "Failed to read power metrics for %s channel %s: %s",
+                        self.name,
+                        self._channel_id,
+                        exc
+                    )
 
             if isinstance(self._device, ConsumptionXMixin):
-                self._daily_consumption = await self._device.async_get_daily_power_consumption(channel=self._channel_id)
+                try:
+                    self._daily_consumption = await self._device.async_get_daily_power_consumption(
+                        channel=self._channel_id
+                    )
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "Failed to read daily consumption for %s channel %s: %s",
+                        self.name,
+                        self._channel_id,
+                        exc
+                    )
 
     @property
-    def is_on(self) -> bool:
-        dev = self._device
-        return dev.is_on(channel=self._channel_id)
+    def is_on(self) -> Optional[bool]:
+        return self._attr_is_on
 
     async def async_turn_off(self, **kwargs) -> None:
         dev = self._device
         await dev.async_turn_off(channel=self._channel_id, skip_rate_limits=True)
+        self._attr_is_on = False
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs) -> None:
         dev = self._device
         await dev.async_turn_on(channel=self._channel_id, skip_rate_limits=True)
+        self._attr_is_on = True
+        self.async_write_ha_state()
 
     @property
     def current_power_w(self) -> Optional[float]:
         if self._last_power_sample is not None:
             return self._last_power_sample.power
+        return None
 
     @property
     def today_energy_kwh(self) -> Optional[float]:
         if self._daily_consumption is not None:
             today = datetime.today()
             total = 0
-            daystart = datetime(year=today.year, month=today.month, day=today.day, hour=0, second=0)
+            daystart = datetime(
+                year=today.year,
+                month=today.month,
+                day=today.day,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
             for x in self._daily_consumption:
-              if x['date'] == daystart:
-                total = x['total_consumption_kwh']
+                if x['date'] == daystart:
+                    total = x['total_consumption_kwh']
             return total
+        return None
 
 
 class DndEntityWrapper(MerossDevice, SwitchEntity):
-    """Wrapper class to adapt the Meross switches into the Homeassistant platform"""
+    """Wrapper class to adapt the Meross DND switch into the Home Assistant platform"""
     _device: MerossDndDevice
 
-    # The DNDMode change does not trigger any push notification, so we cannot we
     _attr_should_poll = True
     _dnd_mode: Optional[DNDMode] = None
 
-    def __init__(self,
-                 device: MerossDndDevice,
-                 device_list_coordinator: DataUpdateCoordinator[Dict[str, HttpDeviceInfo]]):
+    def __init__(
+        self,
+        device: MerossDndDevice,
+        device_list_coordinator: DataUpdateCoordinator[Dict[str, HttpDeviceInfo]]
+    ):
         super().__init__(
             device=device,
-            channel=-1,  # DND devices do not relate to channels
+            channel=-1,
             device_list_coordinator=device_list_coordinator,
             platform=HA_SWITCH,
-            override_channel_name="Do Not Disturb")
+            override_channel_name="Do Not Disturb"
+        )
 
     async def async_update(self):
         if self.online:
             await super().async_update()
-            self._dnd_mode = await self._device.async_get_dnd_mode()
+            try:
+                self._dnd_mode = await self._device.async_get_dnd_mode()
+            except Exception as exc:
+                _LOGGER.debug(
+                    "Failed to read DND mode for %s: %s",
+                    self.name,
+                    exc
+                )
 
     @property
     def is_on(self) -> bool | None:
@@ -129,33 +183,35 @@ class DndEntityWrapper(MerossDevice, SwitchEntity):
         dev = self._device
         await dev.set_dnd_mode(mode=DNDMode.DND_ENABLED, skip_rate_limits=True)
         self._dnd_mode = DNDMode.DND_ENABLED
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs) -> None:
         dev = self._device
         await dev.set_dnd_mode(mode=DNDMode.DND_DISABLED, skip_rate_limits=True)
         self._dnd_mode = DNDMode.DND_DISABLED
+        self.async_write_ha_state()
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities):
     def entity_adder_callback():
-        """Discover and adds new Meross entities"""
-        manager: MerossManager = hass.data[DOMAIN][MANAGER]  # type
+        """Discover and add new Meross entities"""
+        manager: MerossManager = hass.data[DOMAIN][MANAGER]
         coordinator = hass.data[DOMAIN][DEVICE_LIST_COORDINATOR]
         devices = manager.find_devices()
 
         new_entities = []
 
-        # Identify all the devices that expose the Toggle or ToggleX capabilities
         devs = filter(lambda d: isinstance(d, ToggleXMixin) or isinstance(d, ToggleMixin), devices)
-
-        # Exclude garage openers, lights.
         devs = filter(lambda d: not (isinstance(d, GarageOpenerMixin) or isinstance(d, LightMixin)), devs)
 
         for d in devs:
             channels = [c.index for c in d.channels] if len(d.channels) > 0 else [0]
             for channel_index in channels:
-                w = SwitchEntityWrapper(device=d, channel=channel_index,
-                                        device_list_coordinator=coordinator)
+                w = SwitchEntityWrapper(
+                    device=d,
+                    channel=channel_index,
+                    device_list_coordinator=coordinator
+                )
                 if w.unique_id not in hass.data[DOMAIN]["ADDED_ENTITIES_IDS"]:
                     new_entities.append(w)
 
@@ -169,12 +225,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
 
     coordinator = hass.data[DOMAIN][DEVICE_LIST_COORDINATOR]
     coordinator.async_add_listener(entity_adder_callback)
-    # Run the entity adder a first time during setup
     entity_adder_callback()
-
-# TODO: Implement entry unload
-# TODO: Unload entry
-# TODO: Remove entry
 
 
 def setup_platform(hass, config, async_add_entities, discovery_info=None):

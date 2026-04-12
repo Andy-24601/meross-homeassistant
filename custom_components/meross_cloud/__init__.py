@@ -13,6 +13,9 @@ from homeassistant.exceptions import ConfigEntryNotReady, ConfigEntryAuthFailed
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util.ssl import get_default_context, get_default_no_verify_context
+#Smoke alarm patch
+from .meross_smoke_patch import apply_smoke_alarm_patch 
+#EOL
 from meross_iot.controller.device import BaseDevice
 from meross_iot.http_api import MerossHttpClient, ErrorCodes
 from meross_iot.manager import MerossManager
@@ -67,7 +70,6 @@ CONFIG_SCHEMA = vol.Schema(
     },
     extra=vol.ALLOW_EXTRA,
 )
-
 
 def print_startup_message(http_devices: List[HttpDeviceInfo]):
     http_info = "\n".join(
@@ -214,6 +216,7 @@ class MerossDevice(Entity):
         self._channel_id = channel
         self._last_http_state = None
         self._cb_async_remove_listener = None
+        self._last_full_update: Optional[datetime] = None
 
         base_name = f"{device.name} ({device.type})"
         if supplementary_classifiers is not None:
@@ -237,20 +240,43 @@ class MerossDevice(Entity):
         return False
 
     async def async_update(self):
-        if self.online:
-            try:
-                await self._device.async_update()
-            except CommandTimeoutError as e:
-                log_exception(logger=_LOGGER, device=self._device)
+        if not self.online:
+            return
+
+        # Meross cloud gets upset with frequent polling.
+        # Keep at least 30 seconds between full per-device updates.
+        min_update_gap = timedelta(seconds=30)
+        now = datetime.utcnow()
+
+        if self._last_full_update is not None:
+            if now - self._last_full_update < min_update_gap:
+                _LOGGER.debug(
+                    "Skipping update for %s due to rate limit. Last update was %s seconds ago.",
+                    self.name,
+                    (now - self._last_full_update).total_seconds(),
+                )
+                return
+
+        try:
+            await self._device.async_update()
+            self._last_full_update = now
+        except CommandTimeoutError:
+            log_exception(logger=_LOGGER, device=self._device)
 
     def _http_data_changed(self) -> None:
         new_data = self._coordinator.data.get(self._device.uuid)
-        if self._last_http_state is not None and self._last_http_state.online_status != OnlineStatus.ONLINE and new_data.online_status == OnlineStatus.ONLINE:
-            self._last_http_state = new_data
+        was_online = (
+            self._last_http_state is not None
+            and self._last_http_state.online_status == OnlineStatus.ONLINE
+        )
+        is_online = new_data is not None and new_data.online_status == OnlineStatus.ONLINE
+
+        self._last_http_state = new_data
+
+        if not was_online and is_online:
             self.async_schedule_update_ha_state(force_refresh=True)
         else:
-            self._last_http_state = new_data
-            self.async_schedule_update_ha_state(force_refresh=False)
+            self.async_write_ha_state()
 
     @property
     def online(self) -> bool:
@@ -369,6 +395,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
     mqtt_override_address = config_entry.data.get(CONF_OVERRIDE_MQTT_ENDPOINT)
     _LOGGER.info("Override MQTT address set to: %s", "no" if mqtt_override_address is None else "yes -> %s" % mqtt_override_address)
+
+    # Apply smoke alarm patch
+    apply_smoke_alarm_patch()
 
     # Make sure we have all the needed requirements
     if http_api_endpoint is None or HTTP_API_RE.fullmatch(http_api_endpoint) is None:
