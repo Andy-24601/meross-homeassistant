@@ -217,6 +217,7 @@ class MerossDevice(Entity):
         self._last_http_state = None
         self._cb_async_remove_listener = None
         self._last_full_update: Optional[datetime] = None
+        self._last_update_ok = False
 
         base_name = f"{device.name} ({device.type})"
         if supplementary_classifiers is not None:
@@ -239,9 +240,10 @@ class MerossDevice(Entity):
     def should_poll(self) -> bool:
         return False
 
-    async def async_update(self):
+    async def async_update(self) -> bool:
         if not self.online:
-            return
+            self._last_update_ok = False
+            return False
 
         # Meross cloud gets upset with frequent polling.
         # Keep at least 30 seconds between full per-device updates.
@@ -255,13 +257,17 @@ class MerossDevice(Entity):
                     self.name,
                     (now - self._last_full_update).total_seconds(),
                 )
-                return
+                return self._last_update_ok
 
         try:
             await self._device.async_update()
             self._last_full_update = now
+            self._last_update_ok = True
+            return True
         except CommandTimeoutError:
+            self._last_update_ok = False
             log_exception(logger=_LOGGER, device=self._device)
+            return False
 
     def _http_data_changed(self) -> None:
         new_data = self._coordinator.data.get(self._device.uuid)

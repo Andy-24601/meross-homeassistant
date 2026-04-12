@@ -271,7 +271,8 @@ class EnergySensorWrapper(GenericSensorWrapper):
     # For ElectricityMixin devices we need to explicitly call the async_Get_instant_metrics
     async def async_update(self):
         if self.online:
-            await super().async_update()
+            if not await super().async_update():
+                return
 
             _LOGGER.debug(f"Refreshing instant metrics for device {self.name}")
             self._daily_consumption = await self._device.async_get_daily_power_consumption(channel=self._channel_id)
@@ -310,7 +311,8 @@ class BatterySensorWrapper(GenericSensorWrapper):
 
     async def async_update(self):
         if self.online:
-            await super().async_update()
+            if not await super().async_update():
+                return
 
             _LOGGER.debug(f"Refreshing battery state info for device {self.name}")
             self._battery_percentage = await self._device.async_get_battery_life()
