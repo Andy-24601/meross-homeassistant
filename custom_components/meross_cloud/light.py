@@ -218,7 +218,8 @@ class LightEntityWrapper(MerossDevice, LightEntity):
         self.async_write_ha_state()
 
     async def async_update(self):
-        await super().async_update()
+        if not await super().async_update():
+            return
         self._update_last_color_mode()
 
     @property

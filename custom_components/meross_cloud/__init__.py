@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import List, Tuple, Dict, Optional, Collection
+from typing import List, Tuple, Dict, Optional, Collection, Any
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -216,7 +216,13 @@ class MerossDevice(Entity):
         self._channel_id = channel
         self._last_http_state = None
         self._cb_async_remove_listener = None
-        self._last_full_update: Optional[datetime] = None
+        if not hasattr(device, "_ha_meross_update_state"):
+            device._ha_meross_update_state = {
+                "last_full_update": None,
+                "last_update_ok": False,
+                "update_lock": asyncio.Lock(),
+            }
+        self._shared_update_state: Dict[str, Any] = device._ha_meross_update_state
 
         base_name = f"{device.name} ({device.type})"
         if supplementary_classifiers is not None:
@@ -239,35 +245,55 @@ class MerossDevice(Entity):
     def should_poll(self) -> bool:
         return False
 
-    async def async_update(self):
+    async def async_update(self) -> bool:
         if not self.online:
-            return
+            self._shared_update_state["last_update_ok"] = False
+            return False
 
         # Meross cloud gets upset with frequent polling.
         # Keep at least 30 seconds between full per-device updates.
         min_update_gap = timedelta(seconds=30)
         now = datetime.utcnow()
+        last_full_update = self._shared_update_state["last_full_update"]
 
-        if self._last_full_update is not None:
-            if now - self._last_full_update < min_update_gap:
+        if last_full_update is not None and now - last_full_update < min_update_gap:
+            _LOGGER.debug(
+                "Skipping update for %s due to rate limit. Last update was %s seconds ago.",
+                self.name,
+                (now - last_full_update).total_seconds(),
+            )
+            return self._shared_update_state["last_update_ok"]
+
+        async with self._shared_update_state["update_lock"]:
+            now = datetime.utcnow()
+            last_full_update = self._shared_update_state["last_full_update"]
+            if last_full_update is not None and now - last_full_update < min_update_gap:
                 _LOGGER.debug(
-                    "Skipping update for %s due to rate limit. Last update was %s seconds ago.",
+                    "Skipping update for %s due to shared rate limit. Last update was %s seconds ago.",
                     self.name,
-                    (now - self._last_full_update).total_seconds(),
+                    (now - last_full_update).total_seconds(),
                 )
-                return
+                return self._shared_update_state["last_update_ok"]
 
-        try:
-            await self._device.async_update()
-            self._last_full_update = now
-        except CommandTimeoutError:
-            log_exception(logger=_LOGGER, device=self._device)
+            try:
+                await self._device.async_update()
+                self._shared_update_state["last_full_update"] = now
+                self._shared_update_state["last_update_ok"] = True
+                return True
+            except CommandTimeoutError:
+                self._shared_update_state["last_update_ok"] = False
+                log_exception(logger=_LOGGER, device=self._device)
+                return False
 
     def _http_data_changed(self) -> None:
         new_data = self._coordinator.data.get(self._device.uuid)
+        if self._last_http_state is None:
+            self._last_http_state = new_data
+            self.async_write_ha_state()
+            return
+
         was_online = (
-            self._last_http_state is not None
-            and self._last_http_state.online_status == OnlineStatus.ONLINE
+            self._last_http_state.online_status == OnlineStatus.ONLINE
         )
         is_online = new_data is not None and new_data.online_status == OnlineStatus.ONLINE
 
@@ -336,6 +362,7 @@ class MerossDevice(Entity):
 
     async def async_added_to_hass(self) -> None:
         self._device.register_push_notification_handler_coroutine(self._async_push_notification_received)
+        self._last_http_state = self._coordinator.data.get(self._device.uuid)
         self._cb_async_remove_listener = self._coordinator.async_add_listener(self._http_data_changed)
         self.hass.data[DOMAIN]["ADDED_ENTITIES_IDS"].add(self.unique_id)
 

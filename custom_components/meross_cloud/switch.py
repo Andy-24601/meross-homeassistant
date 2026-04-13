@@ -60,7 +60,8 @@ class SwitchEntityWrapper(MerossDevice, SwitchEntity):
 
     async def async_update(self):
         if self.online:
-            await super().async_update()
+            if not await super().async_update():
+                return
 
             try:
                 self._attr_is_on = self._device.is_on(channel=self._channel_id)
@@ -163,7 +164,8 @@ class DndEntityWrapper(MerossDevice, SwitchEntity):
 
     async def async_update(self):
         if self.online:
-            await super().async_update()
+            if not await super().async_update():
+                return
             try:
                 self._dnd_mode = await self._device.async_get_dnd_mode()
             except Exception as exc:
