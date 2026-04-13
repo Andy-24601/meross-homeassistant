@@ -2,6 +2,7 @@
 #Fixed lighting blubs with white issues
 
 import logging
+from datetime import timedelta
 from typing import Optional, Dict, Any
 
 from homeassistant.core import HomeAssistant
@@ -22,9 +23,10 @@ from homeassistant.components.light import (
 )
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from . import MerossDevice
-from .common import (DOMAIN, MANAGER, HA_LIGHT, DEVICE_LIST_COORDINATOR)
+from .common import (DOMAIN, MANAGER, HA_LIGHT, DEVICE_LIST_COORDINATOR, HA_STATE_POLL_INTERVAL_SECONDS)
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(seconds=HA_STATE_POLL_INTERVAL_SECONDS)
 
 
 def _kelvin_to_meross_temp(kelvin: int, min_k: int, max_k: int) -> int:
@@ -58,6 +60,7 @@ class MerossLightDevice(LightMixin, BaseDevice):
 class DiffuserLightEntityWrapper(MerossDevice, LightEntity):
     """Wrapper class to adapt the Meross OilDiffuserLight"""
     _device: MerossOilDiffuserLightDevice
+    _attr_should_poll = True
     _attr_supported_color_modes = {ColorMode.WHITE, ColorMode.RGB, ColorMode.COLOR_TEMP}
 
     def __init__(
@@ -154,6 +157,7 @@ class DiffuserLightEntityWrapper(MerossDevice, LightEntity):
 class LightEntityWrapper(MerossDevice, LightEntity):
     """Wrapper class to adapt the Meross bulbs into the Homeassistant platform"""
     _device: MerossLightDevice
+    _attr_should_poll = True
 
     def __init__(
         self,

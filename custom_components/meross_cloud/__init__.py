@@ -243,7 +243,7 @@ class MerossDevice(Entity):
 
     @property
     def should_poll(self) -> bool:
-        return False
+        return getattr(self, "_attr_should_poll", False)
 
     async def async_update(self) -> bool:
         if not self.online:

@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from datetime import timedelta
 from typing import Optional, Dict
 
 from homeassistant.core import HomeAssistant
@@ -17,9 +18,10 @@ from meross_iot.model.enums import DNDMode
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from . import MerossDevice
-from .common import (DOMAIN, MANAGER, DEVICE_LIST_COORDINATOR, HA_SWITCH)
+from .common import (DOMAIN, MANAGER, DEVICE_LIST_COORDINATOR, HA_SWITCH, HA_STATE_POLL_INTERVAL_SECONDS)
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(seconds=HA_STATE_POLL_INTERVAL_SECONDS)
 
 
 class MerossSwitchDevice(ToggleXMixin, BaseDevice):
@@ -39,6 +41,7 @@ class MerossDndDevice(SystemDndMixin, BaseDevice):
 class SwitchEntityWrapper(MerossDevice, SwitchEntity):
     """Wrapper class to adapt the Meross switches into the Home Assistant platform"""
     _device: MerossSwitchDevice
+    _attr_should_poll = True
 
     _attr_is_on: Optional[bool] = None
 

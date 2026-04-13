@@ -1,5 +1,6 @@
 import logging
 from enum import Enum
+from datetime import timedelta
 from typing import Any, Dict, Union
 
 from homeassistant.core import HomeAssistant
@@ -20,9 +21,10 @@ from homeassistant.components.cover import (
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from . import MerossDevice
-from .common import (DOMAIN, MANAGER, HA_COVER, DEVICE_LIST_COORDINATOR)
+from .common import (DOMAIN, MANAGER, HA_COVER, DEVICE_LIST_COORDINATOR, HA_STATE_POLL_INTERVAL_SECONDS)
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(seconds=HA_STATE_POLL_INTERVAL_SECONDS)
 
 
 class MerossGarageDevice(GarageOpenerMixin, BaseDevice):
@@ -41,6 +43,7 @@ class GarageOpenerEntityWrapper(MerossDevice, CoverEntity):
     """Wrapper class to adapt the Meross Garage Opener into the Homeassistant platform"""
 
     _device: MerossGarageDevice
+    _attr_should_poll = True
     _cover_transient_status: CoverTransientStatus | None = None
 
     def __init__(self,
@@ -109,6 +112,7 @@ class RollerShutterEntityWrapper(MerossDevice, CoverEntity):
     """Wrapper class to adapt the Meross roller shutter into the Homeassistant platform"""
 
     _device: MerossRollerShutterDevice
+    _attr_should_poll = True
 
     def __init__(self,
                  channel: int,

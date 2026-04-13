@@ -57,6 +57,7 @@ CONF_OPT_LAN_HTTP_FIRST = "conf_opt_lan_http_first"
 CONF_OPT_LAN_HTTP_FIRST_ONLY_GET = "conf_opt_lan_http_first_only_get"
 
 HA_SENSOR_POLL_INTERVAL_SECONDS = 30     # HA sensor polling interval
+HA_STATE_POLL_INTERVAL_SECONDS = 180     # Fallback polling for actuators when push updates are missed
 HTTP_UPDATE_INTERVAL = 120               # Meross Cloud "discovery" interval
 UNIT_PERCENTAGE = "%"
 

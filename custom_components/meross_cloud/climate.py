@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode, HVACAction
 # Conditional import for switch device
@@ -14,14 +15,16 @@ from meross_iot.model.http.device import HttpDeviceInfo
 from typing import Optional, List, Dict
 
 from . import MerossDevice
-from .common import (DOMAIN, MANAGER, HA_CLIMATE, DEVICE_LIST_COORDINATOR)
+from .common import (DOMAIN, MANAGER, HA_CLIMATE, DEVICE_LIST_COORDINATOR, HA_STATE_POLL_INTERVAL_SECONDS)
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(seconds=HA_STATE_POLL_INTERVAL_SECONDS)
 
 
 class ValveEntityWrapper(MerossDevice, ClimateEntity):
     """Wrapper class to adapt the Meross devices into the Homeassistant platform"""
     _device: Mts100v3Valve
+    _attr_should_poll = True
     _enable_turn_on_off_backwards_compatibility = False
     # For now, we assume that every Meross Valve supports the following modes.
     # This might be improved in the future by looking at the device abilities via get_abilities()
@@ -151,6 +154,7 @@ class MerossThermostatDevice(ThermostatModeMixin, BaseDevice):
 class ThermostatEntityWrapper(MerossDevice, ClimateEntity):
     """Wrapper class to adapt the Meross thermostat-enabled devices into the Homeassistant platform"""
     _device: MerossThermostatDevice
+    _attr_should_poll = True
     _enable_turn_on_off_backwards_compatibility = False
     _flags = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF  # | ClimateEntityFeature.PRESET_MODE
 
