@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import List, Tuple, Dict, Optional, Collection, Any
+from typing import List, Tuple, Dict, Optional, Collection, Any, Callable, Awaitable
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -221,6 +221,8 @@ class MerossDevice(Entity):
                 "last_full_update": None,
                 "last_update_ok": False,
                 "update_lock": asyncio.Lock(),
+                "shared_fetch_cache": {},
+                "shared_fetch_locks": {},
             }
         self._shared_update_state: Dict[str, Any] = device._ha_meross_update_state
 
@@ -235,11 +237,20 @@ class MerossDevice(Entity):
         if override_channel_name:
             channel_name = override_channel_name
         elif device.channels is not None and len(device.channels) > 0:
-            channel_data = device.channels[channel]
-            channel_name = channel_data.name
+            channel_name = self._resolve_channel_name(channel)
         else:
             channel_name = None
         self._entity_name = f"{base_name} - {channel_name}" if channel_name is not None else base_name
+
+    def _resolve_channel_name(self, channel: int) -> Optional[str]:
+        for channel_data in self._device.channels:
+            if getattr(channel_data, "index", None) == channel:
+                return getattr(channel_data, "name", None)
+
+        if 0 <= channel < len(self._device.channels):
+            return getattr(self._device.channels[channel], "name", None)
+
+        return None
 
     @property
     def should_poll(self) -> bool:
@@ -284,6 +295,33 @@ class MerossDevice(Entity):
                 self._shared_update_state["last_update_ok"] = False
                 log_exception(logger=_LOGGER, device=self._device)
                 return False
+
+    async def _async_get_shared_cached_value(
+        self,
+        cache_key: str,
+        min_update_gap: timedelta,
+        fetcher: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        now = datetime.utcnow()
+        shared_cache: Dict[str, Dict[str, Any]] = self._shared_update_state["shared_fetch_cache"]
+        cache_entry = shared_cache.get(cache_key)
+        if cache_entry is not None and now - cache_entry["updated_at"] < min_update_gap:
+            return cache_entry["value"]
+
+        shared_locks: Dict[str, asyncio.Lock] = self._shared_update_state["shared_fetch_locks"]
+        cache_lock = shared_locks.setdefault(cache_key, asyncio.Lock())
+        async with cache_lock:
+            now = datetime.utcnow()
+            cache_entry = shared_cache.get(cache_key)
+            if cache_entry is not None and now - cache_entry["updated_at"] < min_update_gap:
+                return cache_entry["value"]
+
+            value = await fetcher()
+            shared_cache[cache_key] = {
+                "updated_at": now,
+                "value": value,
+            }
+            return value
 
     def _http_data_changed(self) -> None:
         new_data = self._coordinator.data.get(self._device.uuid)

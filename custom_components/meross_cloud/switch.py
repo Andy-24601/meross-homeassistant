@@ -1,12 +1,9 @@
 import logging
-from datetime import datetime
 from datetime import timedelta
 from typing import Optional, Dict
 
 from homeassistant.core import HomeAssistant
 from meross_iot.controller.device import BaseDevice
-from meross_iot.controller.mixins.consumption import ConsumptionXMixin
-from meross_iot.controller.mixins.electricity import ElectricityMixin
 from meross_iot.controller.mixins.garage import GarageOpenerMixin
 from meross_iot.controller.mixins.light import LightMixin
 from meross_iot.controller.mixins.dnd import SystemDndMixin
@@ -57,10 +54,6 @@ class SwitchEntityWrapper(MerossDevice, SwitchEntity):
             device_list_coordinator=device_list_coordinator,
             platform=HA_SWITCH
         )
-
-        self._last_power_sample = None
-        self._daily_consumption = None
-
     async def async_update(self):
         if self.online:
             if not await super().async_update():
@@ -75,32 +68,6 @@ class SwitchEntityWrapper(MerossDevice, SwitchEntity):
                     self._channel_id,
                     exc
                 )
-
-            if isinstance(self._device, ElectricityMixin):
-                try:
-                    self._last_power_sample = await self._device.async_get_instant_metrics(
-                        channel=self._channel_id
-                    )
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Failed to read power metrics for %s channel %s: %s",
-                        self.name,
-                        self._channel_id,
-                        exc
-                    )
-
-            if isinstance(self._device, ConsumptionXMixin):
-                try:
-                    self._daily_consumption = await self._device.async_get_daily_power_consumption(
-                        channel=self._channel_id
-                    )
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Failed to read daily consumption for %s channel %s: %s",
-                        self.name,
-                        self._channel_id,
-                        exc
-                    )
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -117,32 +84,6 @@ class SwitchEntityWrapper(MerossDevice, SwitchEntity):
         await dev.async_turn_on(channel=self._channel_id, skip_rate_limits=True)
         self._attr_is_on = True
         self.async_write_ha_state()
-
-    @property
-    def current_power_w(self) -> Optional[float]:
-        if self._last_power_sample is not None:
-            return self._last_power_sample.power
-        return None
-
-    @property
-    def today_energy_kwh(self) -> Optional[float]:
-        if self._daily_consumption is not None:
-            today = datetime.today()
-            total = 0
-            daystart = datetime(
-                year=today.year,
-                month=today.month,
-                day=today.day,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-            for x in self._daily_consumption:
-                if x['date'] == daystart:
-                    total = x['total_consumption_kwh']
-            return total
-        return None
 
 
 class DndEntityWrapper(MerossDevice, SwitchEntity):

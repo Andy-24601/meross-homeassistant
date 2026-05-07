@@ -34,7 +34,7 @@ class WaterLeakSensor(MerossDevice, BinarySensorEntity):
 
     @property
     def should_poll(self) -> bool:
-        return True
+        return False
 
     @property
     def is_on(self) -> bool | None:

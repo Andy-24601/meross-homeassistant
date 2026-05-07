@@ -19,7 +19,9 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from . import MerossDevice
 from .common import (DOMAIN, MANAGER, log_exception, HA_SENSOR,
-                     HA_SENSOR_POLL_INTERVAL_SECONDS, invoke_method_or_property, DEVICE_LIST_COORDINATOR)
+                     HA_SENSOR_POLL_INTERVAL_SECONDS, invoke_method_or_property, DEVICE_LIST_COORDINATOR,
+                     DEVICE_METRICS_UPDATE_INTERVAL_SECONDS, DEVICE_CONSUMPTION_UPDATE_INTERVAL_SECONDS,
+                     DEVICE_BATTERY_UPDATE_INTERVAL_SECONDS, DEVICE_TEMPERATURE_UPDATE_INTERVAL_SECONDS)
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 2
@@ -102,7 +104,11 @@ class Mts100TemperatureSensorWrapper(GenericSensorWrapper):
         if self._device.online_status == OnlineStatus.ONLINE:
             try:
                 _LOGGER.debug(f"Refreshing instant metrics for device {self.name}")
-                await self._device.async_get_temperature()
+                await self._async_get_shared_cached_value(
+                    cache_key="temperature",
+                    min_update_gap=timedelta(seconds=DEVICE_TEMPERATURE_UPDATE_INTERVAL_SECONDS),
+                    fetcher=self._device.async_get_temperature,
+                )
             except CommandTimeoutError as e:
                 log_exception(logger=_LOGGER, device=self._device)
 
@@ -142,17 +148,11 @@ class PowerSensorWrapper(GenericSensorWrapper):
     async def async_update(self):
         if self._device.online_status == OnlineStatus.ONLINE:
             try:
-                # We only call the explicit method if the sampled value is older than 10 seconds.
-                power_info = self._device.get_last_sample(channel=self._channel_id)
-                now = datetime.utcnow()
-                if power_info is None or (now - power_info.sample_timestamp).total_seconds() > 10:
-                    # Force device refresh
-                    _LOGGER.debug(f"Refreshing instant metrics for device {self.name}")
-                    await self._device.async_get_instant_metrics(channel=self._channel_id)
-                else:
-                    # Use the cached value
-                    _LOGGER.debug("Skipping data refresh for %s as its value is recent enough", self.name)
-
+                await self._async_get_shared_cached_value(
+                    cache_key=f"instant_metrics:{self._channel_id}",
+                    min_update_gap=timedelta(seconds=DEVICE_METRICS_UPDATE_INTERVAL_SECONDS),
+                    fetcher=lambda: self._device.async_get_instant_metrics(channel=self._channel_id),
+                )
             except CommandTimeoutError as e:
                 log_exception(logger=_LOGGER, device=self._device)
                 pass
@@ -181,17 +181,11 @@ class CurrentSensorWrapper(GenericSensorWrapper):
     async def async_update(self):
         if self._device.online_status == OnlineStatus.ONLINE:
             try:
-                # We only call the explicit method if the sampled value is older than 10 seconds.
-                power_info = self._device.get_last_sample(channel=self._channel_id)
-                now = datetime.utcnow()
-                if power_info is None or (now - power_info.sample_timestamp).total_seconds() > 10:
-                    # Force device refresh
-                    _LOGGER.debug(f"Refreshing instant metrics for device {self.name}")
-                    await self._device.async_get_instant_metrics(channel=self._channel_id)
-                else:
-                    # Use the cached value
-                    _LOGGER.debug(f"Skipping data refresh for {self.name} as its value is recent enough")
-
+                await self._async_get_shared_cached_value(
+                    cache_key=f"instant_metrics:{self._channel_id}",
+                    min_update_gap=timedelta(seconds=DEVICE_METRICS_UPDATE_INTERVAL_SECONDS),
+                    fetcher=lambda: self._device.async_get_instant_metrics(channel=self._channel_id),
+                )
             except CommandTimeoutError as e:
                 log_exception(logger=_LOGGER, device=self._device)
                 pass
@@ -225,17 +219,11 @@ class VoltageSensorWrapper(GenericSensorWrapper):
     async def async_update(self):
         if self._device.online_status == OnlineStatus.ONLINE:
             try:
-                # We only call the explicit method if the sampled value is older than 10 seconds.
-                power_info = self._device.get_last_sample(channel=self._channel_id)
-                now = datetime.utcnow()
-                if power_info is None or (now - power_info.sample_timestamp).total_seconds() > 10:
-                    # Force device refresh
-                    _LOGGER.debug(f"Refreshing instant metrics for device {self.name}")
-                    await self._device.async_get_instant_metrics(channel=self._channel_id)
-                else:
-                    # Use the cached value
-                    _LOGGER.debug(f"Skipping data refresh for {self.name} as its value is recent enough")
-
+                await self._async_get_shared_cached_value(
+                    cache_key=f"instant_metrics:{self._channel_id}",
+                    min_update_gap=timedelta(seconds=DEVICE_METRICS_UPDATE_INTERVAL_SECONDS),
+                    fetcher=lambda: self._device.async_get_instant_metrics(channel=self._channel_id),
+                )
             except CommandTimeoutError as e:
                 log_exception(logger=_LOGGER, device=self._device)
                 pass
@@ -271,11 +259,12 @@ class EnergySensorWrapper(GenericSensorWrapper):
     # For ElectricityMixin devices we need to explicitly call the async_Get_instant_metrics
     async def async_update(self):
         if self.online:
-            if not await super().async_update():
-                return
-
             _LOGGER.debug(f"Refreshing instant metrics for device {self.name}")
-            self._daily_consumption = await self._device.async_get_daily_power_consumption(channel=self._channel_id)
+            self._daily_consumption = await self._async_get_shared_cached_value(
+                cache_key=f"daily_consumption:{self._channel_id}",
+                min_update_gap=timedelta(seconds=DEVICE_CONSUMPTION_UPDATE_INTERVAL_SECONDS),
+                fetcher=lambda: self._device.async_get_daily_power_consumption(channel=self._channel_id),
+            )
 
     @property
     def native_value(self) -> StateType:
@@ -311,11 +300,12 @@ class BatterySensorWrapper(GenericSensorWrapper):
 
     async def async_update(self):
         if self.online:
-            if not await super().async_update():
-                return
-
             _LOGGER.debug(f"Refreshing battery state info for device {self.name}")
-            self._battery_percentage = await self._device.async_get_battery_life()
+            self._battery_percentage = await self._async_get_shared_cached_value(
+                cache_key="battery_life",
+                min_update_gap=timedelta(seconds=DEVICE_BATTERY_UPDATE_INTERVAL_SECONDS),
+                fetcher=self._device.async_get_battery_life,
+            )
 
     @property
     def native_value(self) -> StateType:

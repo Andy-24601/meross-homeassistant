@@ -33,7 +33,7 @@ HA_COVER = "cover"
 HA_CLIMATE = "climate"
 HA_FAN = "fan"
 HA_HUMIDIFIER = "humidifier"
-MEROSS_PLATFORMS = (HA_SWITCH, HA_LIGHT, HA_COVER, HA_SENSOR, HA_BINARY_SENSOR, HA_CLIMATE, HA_HUMIDIFIER)
+MEROSS_PLATFORMS = (HA_SWITCH, HA_LIGHT, HA_COVER, HA_CLIMATE, HA_HUMIDIFIER)
 CONNECTION_TIMEOUT_THRESHOLD = 5
 
 CONF_STORED_CREDS = "stored_credentials"
@@ -56,9 +56,13 @@ CONF_OPT_LAN_MQTT_ONLY = "conf_opt_lan_mqtt_only"
 CONF_OPT_LAN_HTTP_FIRST = "conf_opt_lan_http_first"
 CONF_OPT_LAN_HTTP_FIRST_ONLY_GET = "conf_opt_lan_http_first_only_get"
 
-HA_SENSOR_POLL_INTERVAL_SECONDS = 30     # HA sensor polling interval
-HA_STATE_POLL_INTERVAL_SECONDS = 180     # Fallback polling for actuators when push updates are missed
-HTTP_UPDATE_INTERVAL = 120               # Meross Cloud "discovery" interval
+HA_SENSOR_POLL_INTERVAL_SECONDS = 600    # Sensor polling interval for devices without reliable push state
+HA_STATE_POLL_INTERVAL_SECONDS = 300     # Fallback polling for actuators when push updates are missed
+HTTP_UPDATE_INTERVAL = 900               # Meross Cloud device-list refresh interval
+DEVICE_METRICS_UPDATE_INTERVAL_SECONDS = 600
+DEVICE_CONSUMPTION_UPDATE_INTERVAL_SECONDS = 1800
+DEVICE_BATTERY_UPDATE_INTERVAL_SECONDS = 21600
+DEVICE_TEMPERATURE_UPDATE_INTERVAL_SECONDS = 600
 UNIT_PERCENTAGE = "%"
 
 ATTR_API_CALLS_PER_SECOND = "api_calls_per_second"
