@@ -77,7 +77,8 @@ class DiffuserLightEntityWrapper(MerossDevice, LightEntity):
         )
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self._device.async_turn_off(channel=self._channel_id, skip_rate_limits=True)
+        if self.is_on:
+            await self._device.async_turn_off(channel=self._channel_id, skip_rate_limits=True)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if not self.is_on:
@@ -174,7 +175,8 @@ class LightEntityWrapper(MerossDevice, LightEntity):
         self._last_color_mode: ColorMode | None = None
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self._device.async_turn_off(channel=self._channel_id, skip_rate_limits=True)
+        if self.is_on:
+            await self._device.async_turn_off(channel=self._channel_id, skip_rate_limits=True)
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
